@@ -1,0 +1,31 @@
+# Dependencies
+node_modules/
+
+# Never commit credentials. The plugin stores API keys in the DSH profile's
+# cordis.patch.yml (outside this repo), but an accidental local override here
+# would be catastrophic, so every plausible name is excluded.
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+config.local.*
+
+# Real-run artefacts: these contain live API responses and must not be published.
+docs/realtest/out/
+docs/realtest/resp.json
+docs/realtest/*-report.json
+docs/realtest/latency.json
+
+# Generated previews (rebuild with docs/realtest/make-live-preview.mjs)
+docs/realtest/ui/live.html
+docs/realtest/ui/entry.html
+docs/realtest/ui/entry-frame.html
+
+# Editor / OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~

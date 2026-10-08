@@ -1,0 +1,21 @@
+# Keep the repository's text files byte-stable across platforms.
+#
+# This plugin's source is UTF-8 with Chinese strings. Without these rules, a
+# Windows checkout with core.autocrlf could rewrite line endings and, worse, a
+# careless editor could re-encode the CJK text — which is exactly how the
+# README ended up looking like mojibake in one console.
+* text=auto eol=lf
+
+*.js    text eol=lf
+*.mjs   text eol=lf
+*.json  text eol=lf
+*.yml   text eol=lf
+*.md    text eol=lf
+
+# Binary assets must never be line-ending-converted.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.mp4   binary
+*.ico   binary

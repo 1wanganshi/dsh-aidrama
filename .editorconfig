@@ -1,0 +1,20 @@
+# Pin the encodings so the CJK strings in this plugin are never mangled.
+#
+# Every source file is UTF-8 without a BOM. Windows editors and PowerShell
+# consoles default to a legacy code page, which is how UTF-8 Chinese renders as
+# mojibake even though the bytes on disk are correct.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{yml,yaml}]
+indent_size = 2

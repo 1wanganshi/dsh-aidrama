@@ -1,0 +1,50 @@
+{
+  "name": "dsh-aidrama",
+  "version": "0.1.0",
+  "description": "AI 短剧工作台：想法梳理 → 剧情设计 → 分场脚本 → 人物/场景设定集与三视图 → 分镜参考图 → 视频成片，六阶段流水线，侧边栏独立工作台，图像复用现有渠道，视频渠道可配置并保留提示词导出兜底。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./protocol": "./lib/host/protocol.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "files": [
+    "lib/",
+    "cordis.patch.yml",
+    "docs/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node docs/run-all-checks.mjs",
+    "check:globals": "node docs/scan-bare-globals.mjs",
+    "check:secrets": "node docs/audit-secrets.mjs",
+    "preview": "node docs/realtest/make-live-preview.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "ai-drama",
+    "short-drama",
+    "storyboard",
+    "character-sheet",
+    "text-to-video",
+    "ai-video"
+  ],
+  "license": "MIT"
+}
