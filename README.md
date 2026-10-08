@@ -155,8 +155,18 @@ lib/
     routes.js         六个 HTTP 路由族（仅回环，密钥不出宿主）
     video.js          四协议视频适配器（minimax/seedance/openai-compat/prompt-pack）
 docs/
-  verify-*.mjs        各模块的自检套件（无需测试框架，直接 node 跑）
+  verify-*.mjs         各模块的自检套件（无需测试框架，直接 node 跑）
+  run-all-checks.mjs   一次跑完所有套件与闸门（npm test）
+  scan-bare-globals.mjs  静态闸门：裸标识符 / 关窗调用
+  audit-secrets.mjs    静态闸门：凭据形态扫描
+  link-host-deps.mjs   把宿主提供的 schemastery 链进 node_modules
+  realtest/
+    make-live-preview.mjs  用真实 bundle 渲染工作台并截图
+    ui/                    上面那个脚本产出的截图（README 引用）
 ```
+
+**本仓库只包含插件本身。** 开发过程中的调研记录、第三方资料摘录、
+一次性调试脚本都没有随仓库发布。
 
 **关键设计**：Agent 工具和浏览器工作台走**同一套 HTTP 路由**。
 只有一份实现，所以「模型提交的东西」和「你在界面上提交的东西」不可能出现行为差异。
@@ -247,8 +257,11 @@ node docs/verify-e2e.mjs            # 六阶段端到端流水线          75/75
 里含麦基节拍、生成的分镜提示词真的带锁定 canon 与运镜 token、新增字段真的能穿过
 `normalizeStageContent` 不丢，以及两个新引擎是**复用** prompts.js 的负面清单而不是抄一份。
 
-`docs/research-2026.md` 记录了本次调研的全部来源与可信度标注（含我的诚信声明：
-检索走的是替代通道，摘要是二手的，数字是厂商口径）。
+> `lib/host/story.js` 与 `lib/host/consistency.js` 的注释里引用了调研记录的章节号
+> （如「§四 钩子」「§五 麦基节拍」）。调研原文属于开发过程材料，**未随本仓库发布**；
+> 这些章节号保留下来是为了标明**每条创作规则各自的出处**，方便你判断可信度。
+> 请注意：其中的数字（如「85% 的用户在前三秒划走」）来自厂商口径与二手摘要，
+> **不是我们实测的**，请按参考而非事实对待。
 
 ## 已知边界（诚实说明）
 
