@@ -29,3 +29,6 @@ Thumbs.db
 .vscode/
 *.swp
 *~
+
+# Local publish instructions (not part of the plugin)
+PUSH.md
