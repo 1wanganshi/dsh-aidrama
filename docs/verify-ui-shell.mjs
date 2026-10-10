@@ -350,8 +350,8 @@ section('G. the dashboard reads as a production tool, not a form')
 
   check('a dashboard renderer exists', /const renderDashboard = \(\) =>/.test(src))
   check('the overview is reachable as its own stage', /state\.stage === 'home'/.test(src))
-  check('opening a project lands on the overview, not a JSON textarea',
-    /if \(state\.stage !== 'settings'\) state\.stage = 'home'/.test(src))
+  check('opening a project lands on a real stage, not a JSON textarea',
+    /if \(state\.stage !== 'settings'\)\s*\{[\s\S]*?state\.stage = nextEditableStageOf\(/.test(src))
 
   check('a hero band exists', /aidrama-hero/.test(src))
   check('the hero carries artwork', /background-image:url/.test(src) && /HERO_ART/.test(src))

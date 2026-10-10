@@ -485,7 +485,15 @@ try {
   await step('writeProject bumps updatedAt and stays atomic', async () => {
     const project = await readProject(created.id)
     const before = project.updatedAt
-    await new Promise(resolve => setTimeout(resolve, 5))
+    // Wait until the wall clock has actually advanced. A fixed 5 ms sleep was
+    // flaky: under load two writes can land in the same millisecond, so the
+    // strict `>` below would fail for a reason that has nothing to do with the
+    // store. Bounded so a clock that never moves still fails, not hangs.
+    let waited = 0
+    while (Date.now() <= before && waited < 1000) {
+      await new Promise(resolve => setTimeout(resolve, 2))
+      waited += 2
+    }
     await writeProject(project)
     ok('writeProject stamps a newer updatedAt', project.updatedAt > before, { before, after: project.updatedAt })
 

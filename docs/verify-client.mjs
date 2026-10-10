@@ -242,6 +242,19 @@ class StubNode {
     this.attributes.delete(String(name))
   }
 
+  // Standard DOM `Node.contains`: true for self and any descendant. Present on
+  // every real element, so the client's own-write observer filter can rely on
+  // it; the stub mirrors it rather than leaving the method undefined.
+  contains(other) {
+    if (other === null || other === undefined) return false
+    let node = other
+    while (node !== null && node !== undefined) {
+      if (node === this) return true
+      node = node.parentNode
+    }
+    return false
+  }
+
   addEventListener(name, handler) {
     if (!this.listeners.has(name)) this.listeners.set(name, [])
     this.listeners.get(name).push(handler)
