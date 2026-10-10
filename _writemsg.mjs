@@ -1,4 +1,5 @@
-fix(ui): 第一步的细节字段默认收起
+import fs from 'node:fs'
+const msg = `fix(ui): 第一步的细节字段默认收起
 
 上一版只把必填标记去掉了，但 8 个输入框还摆在那里。用户反馈："这些
 内容还在呀？" —— 说明问题不在必填标记，而在输入框本身。一个只有念头
@@ -19,3 +20,6 @@ fix(ui): 第一步的细节字段默认收起
 用的 fixture 已有内容、必然处于展开态，测不到新项目的真实起点。
 
 npm test: 16 套 + 2 道闸门全绿。
+`
+fs.writeFileSync('_msg.txt', msg, 'utf8')
+console.log('written', msg.length, 'chars')
