@@ -15,6 +15,121 @@ import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const root = path.join(here, '..')
+
+/**
+ * Every shipped host file, not just the browser bundle.
+ *
+ * This started as a client-only scan. Then a fix in lib/index.js renamed a
+ * variable and left one reference to the old name behind — `node --check`
+ * passes (it is valid syntax) and nothing else looked, so a busy `alias` would
+ * have thrown a ReferenceError at generation time. Scanning the host too is
+ * what closes that hole.
+ */
+const hostFiles = [
+  'lib/index.js',
+  ...fs.readdirSync(path.join(root, 'lib', 'host'))
+    .filter(name => name.endsWith('.js'))
+    .sort()
+    .map(name => `lib/host/${name}`),
+]
+
+/** Strip comments and strings so their contents do not pollute the scan. */
+function prepare(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:\\])\/\/[^\n]*/g, '$1 ')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+    // Regex literals: `/\b(?:Bearer|...)/` contains `b(` and would read as a
+    // call to an undeclared `b`. Matched only where a regex can legally start
+    // (after `(`, `,`, `=`, `:`, `[`, `!`, `&`, `|`, `?`, `{`, `;`, or return).
+    .replace(/(?<=[(,=:[!&|?{};]\s*)\/(?![*/])(?:[^/\\\n[]|\\.|\[(?:[^\]\\]|\\.)*\])+\/[gimsuy]*/g, '/RE/')
+}
+
+/** Scan one file's source for called-but-never-declared identifiers. */
+function scan(code, { node }) {
+  const declared = new Set()
+  for (const m of code.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
+  for (const m of code.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
+  for (const m of code.matchAll(/\bclass\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
+  for (const m of code.matchAll(/\b(?:const|let|var)\s*\{([^}]*)\}/g)) {
+    for (const p of m[1].split(',')) {
+      const name = p.trim().split(':').pop().trim().replace(/=.*$/, '').trim()
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) declared.add(name)
+    }
+  }
+  for (const m of code.matchAll(/\b(?:const|let|var)\s*\[([^\]]*)\]/g)) {
+    for (const p of m[1].split(',')) {
+      const name = p.trim().replace(/=.*$/, '').trim()
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) declared.add(name)
+    }
+  }
+  for (const m of code.matchAll(/\bfunction\s*[A-Za-z_$\w]*\s*\(([^)]*)\)/g)) {
+    for (const p of m[1].split(',')) {
+      const name = p.trim().replace(/=.*$/, '').replace(/^\.\.\./, '').trim()
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) declared.add(name)
+    }
+  }
+  for (const m of code.matchAll(/\(([^)]*)\)\s*=>/g)) {
+    for (const p of m[1].split(',')) {
+      const name = p.trim().replace(/=.*$/, '').replace(/^\.\.\./, '').trim()
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) declared.add(name)
+    }
+  }
+  for (const m of code.matchAll(/\b([A-Za-z_$][\w$]*)\s*=>/g)) declared.add(m[1])
+  for (const m of code.matchAll(/\bcatch\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/g)) declared.add(m[1])
+  for (const m of code.matchAll(/\bfor\s*\(\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
+  // Imported bindings are declared by their import statement.
+  for (const m of code.matchAll(/\bimport\s+([A-Za-z_$][\w$]*)\s+from/g)) declared.add(m[1])
+  for (const m of code.matchAll(/\bimport\s*\{([^}]*)\}/g)) {
+    for (const p of m[1].split(',')) {
+      const name = p.trim().split(/\s+as\s+/).pop().trim()
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) declared.add(name)
+    }
+  }
+  for (const m of code.matchAll(/\bimport\s+\*\s+as\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1])
+  // Export lists re-export names that must already exist; treat as declared.
+  for (const m of code.matchAll(/\bexport\s*\{([^}]*)\}/g)) {
+    for (const p of m[1].split(',')) {
+      const name = p.trim().split(/\s+as\s+/)[0].trim()
+      if (/^[A-Za-z_$][\w$]*$/.test(name)) declared.add(name)
+    }
+  }
+
+  const called = new Map()
+  // A CALL is `name(` NOT preceded by `.` and NOT a definition site.
+  //
+  // Two shapes must be excluded or they read as calls:
+  //   `writeHead(code) { ... }`  — a shorthand method DEFINITION inside an object
+  //   `submit(ctx) -> {...}`     — JSDoc prose (already stripped, but be safe)
+  // A definition has no `.`/`?.` before it AND is followed by a `{` body with no
+  // `=>` — so requiring a non-`{` right-hand side after the closing paren is
+  // what separates the two.
+  const callRe = /(?<![.\w$?'"`])([A-Za-z_$][\w$]*)\s*\??\.?\s*\(/g
+  for (const m of code.matchAll(callRe)) {
+    const name = m[1]
+    const after = code.slice(m.index + m[0].length)
+    const close = after.indexOf(')')
+    if (close !== -1) {
+      const rest = after.slice(close + 1).replace(/^\s*/, '')
+      // `name(...) {` with no arrow is a method definition, not a call.
+      if (rest.startsWith('{') && !/^\{[^}]*\}\s*=>/.test(rest)) continue
+    }
+    if (!called.has(name)) called.set(name, 0)
+    called.set(name, called.get(name) + 1)
+  }
+
+  const suspicious = []
+  for (const [name, count] of called) {
+    if (SAFE.has(name)) continue
+    if (declared.has(name)) continue
+    if (node && NODE_SAFE.has(name)) continue
+    suspicious.push({ name, count })
+  }
+  return { suspicious, declared, called }
+}
+
 const src = fs.readFileSync(path.join(root, 'lib', 'client.js'), 'utf8')
 
 // Strip comments and strings so their contents do not pollute the scan.
@@ -74,6 +189,14 @@ const SAFE = new Set([
   'TextEncoder', 'TextDecoder', 'crypto', 'performance', 'localStorage', 'sessionStorage', 'navigator',
 ])
 
+/** Extra globals that are safe in the Node host half only. */
+const NODE_SAFE = new Set([
+  'Buffer', 'process', 'global', '__dirname', '__filename', 'URL', 'URLSearchParams',
+  'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'queueMicrotask',
+  'structuredClone', 'fetch', 'AbortController', 'AbortSignal', 'TextEncoder', 'TextDecoder',
+  'require', 'console',
+])
+
 const suspicious = []
 for (const [name, count] of called) {
   if (SAFE.has(name)) continue
@@ -114,4 +237,38 @@ if (closeCall) {
   console.log('no application-closing close() call')
 }
 
-process.exit(suspicious.length === 0 && !closeCall ? 0 : 1)
+// --- host half: same scan, Node globals allowed -------------------------
+console.log('')
+console.log(`host files: ${hostFiles.length}`)
+const hostProblems = []
+for (const rel of hostFiles) {
+  const source = fs.readFileSync(path.join(root, rel), 'utf8')
+  const { suspicious: found } = scan(prepare(source), { node: true })
+  if (found.length > 0) hostProblems.push({ rel, found })
+}
+
+if (hostProblems.length === 0) {
+  console.log('OK — host half: every called identifier is declared or a Node global.')
+} else {
+  console.log('SUSPICIOUS — host half has called-but-undeclared identifiers:')
+  for (const { rel, found } of hostProblems) {
+    for (const s of found.sort((a, b) => b.count - a.count)) {
+      console.log(`  ${rel}: ${s.name}  (${s.count}x)`)
+    }
+  }
+}
+
+// Undefined VALUE references.
+//
+// A regex cannot do this reliably: telling `{ model: alias }` (a reference)
+// from `{ alias: 1 }` (a key) or `'alias'` (a string) needs real scoping, and
+// the naive attempt produced dozens of false positives (true, false, null,
+// and every enum value). A noisy gate gets ignored, so this is NOT a regex.
+//
+// Instead, load each host module and check that the names it REFERENCES at
+// runtime actually exist. See docs/verify-host-loads.mjs, which imports every
+// host module for real — a renamed-away binding there is a hard failure.
+console.log('')
+console.log('value-reference scan: delegated to verify-host-loads.mjs (real import)')
+
+process.exit(suspicious.length === 0 && !closeCall && hostProblems.length === 0 ? 0 : 1)
