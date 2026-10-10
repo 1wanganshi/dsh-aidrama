@@ -54,6 +54,19 @@ console.log('\n--- failure is cached, not retried per generation ---')
 check('memoizes the attempt', src.includes('imageClientState.tried'))
 check('memoizes the value', src.includes('imageClientState.value'))
 
+console.log('\n--- the low-level export needs a channel object FIRST ---')
+// generateImage(upstream, request, options): calling it with one argument makes
+// `upstream` the request and `request` undefined, which throws
+// "Cannot read properties of undefined (reading 'trim')".
+check('calls the low-level export with an upstream channel',
+  src.includes('apiUrl: borrowed.apiUrl'))
+check('prefers runtime.run when available', src.includes('runtime.run'))
+
+console.log('\n--- an unset defaultModel must not crash ---')
+check('does not trim a possibly-undefined defaultModel',
+  !/\(request\.model \?\? value\.defaultModel\)\.trim\(\)/.test(src))
+check('guards the model before trimming', src.includes("typeof value.defaultModel === 'string'"))
+
 console.log('\n--- the live machine: does resolution actually work here? ---')
 const profilesRoot = path.join(os.homedir(), '.dsh', 'profiles')
 let resolved
