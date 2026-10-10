@@ -68,10 +68,16 @@ console.log('\n--- the legacy shapes still work ---')
   check('exterior is not mistaken for interior', ext.interior === false, JSON.stringify(ext.interior))
 }
 
-console.log('\n--- an unknown kind does not silently claim interior ---')
+console.log('\n--- an unknown kind falls back to interior, not exterior ---')
 {
   const weird = scenify({ id: 'g', name: '怪', kind: '???', description: 'd', lighting: 'l', composition: 'c', masterPrompt: 'm' })
-  check('unknown kind -> false (the pre-existing default)', weird.interior === false, JSON.stringify(weird.interior))
+  // This assertion was REVERSED deliberately. The old default was `false`
+  // (exterior), which is what stamped 场景类型：室外 onto subway carriages and
+  // control rooms once every scene fell through to it. Short-drama scenes are
+  // overwhelmingly interiors, and a wrongly-marked exterior is a visible error
+  // in the prompt while an unmarked one is merely unstated — so the safe
+  // default is interior.
+  check('unknown kind -> true (interior)', weird.interior === true, JSON.stringify(weird.interior))
 }
 
 console.log(`\n${'='.repeat(56)}`)
