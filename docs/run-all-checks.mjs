@@ -24,6 +24,16 @@ const suites = fs.readdirSync(here)
 
 const gates = ['scan-bare-globals.mjs', 'scan-async-values.mjs', 'audit-secrets.mjs']
 
+// Interactive suites live under docs/realtest/ because they mount the real client
+// bundle into a DOM stub and click it. They are the only checks that can see a
+// handler that runs but renders nothing.
+const realtest = fs.existsSync(path.join(here, 'realtest'))
+  ? fs.readdirSync(path.join(here, 'realtest'))
+    .filter(f => f.endsWith('.mjs') && !f.startsWith('make-'))
+    .sort()
+    .map(f => path.join('realtest', f))
+  : []
+
 let passed = 0
 const failed = []
 
@@ -44,11 +54,12 @@ function run(file) {
   console.log(`  [${tag}] ${file.padEnd(30)} ${summary.trim()}`)
 }
 
-console.log(`running ${suites.length} verification suites + ${gates.length} static gates\n`)
+console.log(`running ${suites.length} verification suites + ${gates.length} static gates + ${realtest.length} interactive suites\n`)
 for (const f of suites) run(f)
+for (const f of realtest) run(f)
 for (const f of gates) run(f)
 
-const total = suites.length + gates.length
+const total = suites.length + gates.length + realtest.length
 console.log(`\n${'='.repeat(60)}`)
 if (failed.length === 0) {
   console.log(`ALL GREEN — ${total} checks passed`)
