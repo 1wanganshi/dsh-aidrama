@@ -53,6 +53,24 @@ console.log('--- the video stage reads the field the link writes ---')
 check('firstFrameDataUrl prefers firstFrameAssetId', routesSrc.includes('shot?.firstFrameAssetId'))
 check('it falls back to imageAssetId', routesSrc.includes('|| text(shot?.imageAssetId)'))
 
+console.log('\n--- the resolver must NOT be async ---')
+// THE BUG THIS GUARDS: `firstFrameDataUrl` was `async` while six call sites used
+// it as a plain value, so the bundle stored a Promise. A Promise serializes to
+// `{}`, which is exactly the `"firstFrame": { "kind": "image", "ref": {} }` every
+// video task shipped — a task that reports success and has no first frame.
+check('firstFrameDataUrl is not declared async',
+  !/async\s+function\s+firstFrameDataUrl/.test(routesSrc),
+  'async + a non-awaited call site serializes to {}')
+check('every call site is a plain value, not awaited',
+  !/await\s+firstFrameDataUrl/.test(routesSrc),
+  'an `await` here would mean it went async again')
+// Guard the general shape: any `firstFrame:` built from a call must not await a
+// function that is known-async, and the resolver must stay sync.
+const callSites = [...routesSrc.matchAll(/firstFrame:\s*([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1])
+check('the firstFrame call site resolves synchronously',
+  callSites.every(name => !new RegExp(`async\\s+function\\s+${name}`).test(routesSrc)),
+  `call sites: ${callSites.join(', ') || '(none)'}`)
+
 console.log('\n--- live check: does the real project resolve first frames? ---')
 const pid = 'p-mv2dd4i9-s5w9k6i1'
 const file = path.join(os.homedir(), '.dsh', 'aidrama', 'projects', `${pid}.json`)
@@ -117,10 +135,15 @@ if (!fs.existsSync(file)) {
 
   // Both id fields must survive the tree rebuild, because different readers use
   // different ones.
+  //
+  // Compare against the UNIQUE shot refs, not the asset count: regenerating a
+  // shot leaves several assets pointing at the same ref, so counting assets made
+  // this assert 16 links against 19 assets and fail on correct data.
+  const uniqueRefs = new Set(shotRefs.map(a => a.ref))
   const linked = shots.filter(s => s.imageAssetId)
-  check('tree shots carry imageAssetId',
-    linked.length === shotRefs.length,
-    `${linked.length} of ${shotRefs.length}`)
+  check('every shot with a still is linked in the tree',
+    linked.length === uniqueRefs.size,
+    `${linked.length} linked, ${uniqueRefs.size} unique refs (${shotRefs.length} assets)`)
   check('tree shots carry firstFrameAssetId too',
     linked.every(s => s.firstFrameAssetId === s.imageAssetId))
 }
