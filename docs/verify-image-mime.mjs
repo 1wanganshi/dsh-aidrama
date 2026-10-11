@@ -39,6 +39,22 @@ check('a declared type is only trusted when it is an image',
   /\/\^image\\\//.test(src) || src.includes("doc: '/^image\\//u'") || src.includes('/^image\\//u.test(declared)'))
 check('io/octet-stream falls through to sniffing', src.includes('application/octet-stream'))
 
+console.log('\n--- the STORED extension must match the bytes too ---')
+// First half of the bug: the payload was sniffed correctly but stored under a
+// hard-coded `.png` name. The asset route derives its Content-Type from the
+// file extension, so the correct mime never reached the browser.
+const routesSrc = fs.readFileSync(path.join(root, 'lib', 'host', 'routes.js'), 'utf8')
+check('routes defines extensionForMime', routesSrc.includes('function extensionForMime'))
+check('EXT_BY_MIME maps jpeg to .jpg', /'image\/jpeg':\s*'\.jpg'/.test(routesSrc))
+check('the asset name uses the resolved extension',
+  routesSrc.includes('extensionForMime(mime)') && !/name:\s*`\$\{text\(target\?\.name\) \|\| ref\}\.png`/.test(routesSrc))
+check('the stored ext uses the resolved extension',
+  /ext:\s*extensionForMime\(mime\)/.test(routesSrc))
+check('an unknown type falls back to a non-rendering extension',
+  routesSrc.includes("' .bin'") || routesSrc.includes("?? '.bin'"))
+check('the asset route prefers the stored mime over the extension',
+  /SAFE_INLINE_MIME\[declared\]\s*\?\?/.test(routesSrc))
+
 console.log('\n--- sniffing must be right on the formats that actually occur ---')
 // Re-derive the function from source so the test cannot drift from it.
 const body = src.slice(src.indexOf('function sniffImageMime'))
