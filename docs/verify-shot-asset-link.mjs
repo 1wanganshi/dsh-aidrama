@@ -60,39 +60,69 @@ if (!fs.existsSync(file)) {
   console.log('SKIP  the 回声站 project is not on this machine')
 } else {
   const project = await store.readProject(pid)
-  const shotRefs = (project.assets ?? []).filter(a => a.kind === 'shot-ref')
 
-  const resolve = (shot) => {
-    const assetId = String(shot?.firstFrameAssetId ?? '') || String(shot?.imageAssetId ?? '')
-    if (assetId === '') return undefined
-    const asset = (project.assets ?? []).find(a => a?.id === assetId)
-    return asset === undefined ? undefined : String(asset.file ?? '')
+  // USE THE ROUTE'S OWN SHOT SOURCE.
+  //
+  // The first version of this test looked shots up in the flat
+  // `content.script.shots` and passed while the real bug was live — because the
+  // route calls `allShots()`, which prefers the EPISODE TREE, and tree shots are
+  // raw model output with no `id` and no asset link. Testing a different
+  // collection than the product uses is how a green suite hid a broken first
+  // frame for two rounds.
+  const routesSrc = fs.readFileSync(path.join(root, 'lib', 'host', 'routes.js'), 'utf8')
+  const grab = (name) => {
+    const start = routesSrc.indexOf(`function ${name}(`)
+    if (start < 0) throw new Error(`routes.js has no function ${name}`)
+    return routesSrc.slice(start, routesSrc.indexOf('\n}\n', start) + 2)
   }
+  const { allShots, firstFrameDataUrl } = new Function(`
+    const text = v => (typeof v === 'string' ? v : v == null ? '' : String(v));
+    const isRecord = v => v !== null && typeof v === 'object' && !Array.isArray(v);
+    const AIDRAMA_API = { asset: '/api/dsh-aidrama/asset' };
+    ${grab('shotsFromTree')}
+    ${grab('allShots')}
+    ${grab('firstFrameDataUrl')}
+    return { allShots, firstFrameDataUrl };
+  `)() // NOSONAR: local test helper
+
+  check('the route source is reachable from the test', typeof allShots === 'function')
+
+  const shots = allShots(project)
+  const shotRefs = (project.assets ?? []).filter(a => a.kind === 'shot-ref')
+  check('allShots returns the 23-shot script', shots.length >= 20, `${shots.length}`)
 
   let resolvedCount = 0
+  const unresolved = []
   for (const a of shotRefs) {
-    const shot = (project.content.script.shots ?? []).find(s => s.id === a.ref)
-    if (shot === undefined) continue
-    if (resolve(shot) !== undefined) resolvedCount += 1
+    const shot = shots.find(s => s.id === a.ref)
+    if (shot === undefined) { unresolved.push(`${a.ref}(no shot)`); continue }
+    if (firstFrameDataUrl(project, shot) !== undefined) resolvedCount += 1
+    else unresolved.push(a.ref)
   }
 
   check('every shot that HAS a generated still resolves a first frame',
     shotRefs.length === 0 || resolvedCount === shotRefs.length,
-    `${resolvedCount}/${shotRefs.length}`)
+    `${resolvedCount}/${shotRefs.length} — unresolved: ${unresolved.join(', ')}`)
 
   // The exact regression shape: the video bundle carried an empty ref object.
-  const unlinked = shotRefs.filter(a => {
-    const shot = (project.content.script.shots ?? []).find(s => s.id === a.ref)
-    return shot !== undefined && resolve(shot) === undefined
-  })
-  check('no shot with a still reports an empty first frame', unlinked.length === 0,
-    unlinked.map(a => a.ref).join(', '))
+  check('no shot with a still reports an empty first frame', unresolved.length === 0,
+    unresolved.join(', '))
 
   // And a shot with NO still must still report none, rather than a stale id.
-  const never = (project.content.script.shots ?? []).find(s => !s.imageAssetId && !s.firstFrameAssetId)
+  const never = shots.find(s => !s.imageAssetId && !s.firstFrameAssetId)
   if (never !== undefined) {
-    check('a shot with no still resolves no first frame', resolve(never) === undefined)
+    check('a shot with no still resolves no first frame',
+      firstFrameDataUrl(project, never) === undefined, never.id)
   }
+
+  // Both id fields must survive the tree rebuild, because different readers use
+  // different ones.
+  const linked = shots.filter(s => s.imageAssetId)
+  check('tree shots carry imageAssetId',
+    linked.length === shotRefs.length,
+    `${linked.length} of ${shotRefs.length}`)
+  check('tree shots carry firstFrameAssetId too',
+    linked.every(s => s.firstFrameAssetId === s.imageAssetId))
 }
 
 console.log(`\n${'='.repeat(56)}`)
