@@ -5,9 +5,10 @@
  *
  *     npm test
  *
- * It runs the structural verification suites plus the two static gates — the
- * bare-globals scanner (which caught two shipped ReferenceErrors) and the
- * secret audit (which must pass before anything is published).
+ * It runs the structural verification suites plus the static gates:
+ *   - scan-bare-globals.mjs (caught two shipped ReferenceErrors)
+ *   - scan-async-values.mjs (caught a Promise serialized to `{}`)
+ *   - audit-secrets.mjs (must pass before anything is published)
  */
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -21,7 +22,7 @@ const suites = fs.readdirSync(here)
   .filter(f => f.startsWith('verify-') && f.endsWith('.mjs'))
   .sort()
 
-const gates = ['scan-bare-globals.mjs', 'audit-secrets.mjs']
+const gates = ['scan-bare-globals.mjs', 'scan-async-values.mjs', 'audit-secrets.mjs']
 
 let passed = 0
 const failed = []
